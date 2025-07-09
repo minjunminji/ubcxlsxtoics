@@ -1,0 +1,23 @@
+Created excel_to_ics.py with fixed parser and biweekly to weekly conversion
+Created excel_to_ics_web.py for web service integration
+Created React/Next.js web application with:
+- package.json with Next.js, React, TypeScript, Tailwind CSS dependencies
+- next.config.js for Next.js configuration
+- tailwind.config.js with UBC brand colors
+- postcss.config.js for Tailwind processing
+- tsconfig.json for TypeScript configuration
+- app/globals.css with Tailwind imports and custom styles
+- app/layout.tsx with proper metadata and Inter font
+- app/page.tsx with drag-and-drop upload interface, detailed instructions, and error handling
+- app/api/convert/route.ts for handling file uploads and Python script execution
+- vercel.json for Vercel deployment configuration
+- requirements.txt for Python dependencies
+- README.md with comprehensive setup and deployment instructions
+
+Web app features:
+- Drag and drop file upload with visual feedback
+- Detailed error messages for troubleshooting
+- Step-by-step instructions for Google Calendar and Apple Calendar import
+- UBC branded styling with blue and gold colors
+- Responsive design for mobile and desktop
+- Secure file processing with server-side conversion
