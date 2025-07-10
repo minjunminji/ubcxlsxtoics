@@ -44,8 +44,14 @@ export default function Home() {
       })
       
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to convert file')
+        const errorText = await response.text();
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.error || 'Failed to convert file');
+        } catch (jsonError) {
+          // If the response is not JSON, use the raw text as the error
+          throw new Error(errorText || 'An unknown error occurred on the server.');
+        }
       }
       
       // Get the blob data
