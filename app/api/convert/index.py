@@ -7,6 +7,7 @@ RFC 5545 .ics files for Google Calendar.
 from __future__ import annotations
 import sys, uuid, re, json
 from datetime import datetime, timedelta
+from io import BytesIO
 
 import pandas as pd
 from dateutil import parser as date_parser
@@ -15,7 +16,8 @@ from http.server import BaseHTTPRequestHandler
 import json
 from urllib.parse import parse_qs
 import cgi
-import tempfile
+# remove tempfile import as it's no longer needed
+# import tempfile
 
 # Keep your existing helper functions and constants
 VTIMEZONE_BLOCK = """BEGIN:VTIMEZONE
@@ -101,14 +103,16 @@ def parse_meeting_pattern(pattern: str):
 
 def convert_excel_to_ics(file_content: bytes):
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_file:
-            tmp_file.write(file_content)
-            tmp_file_path = tmp_file.name
+        # Process file in-memory instead of writing to disk
+        file_buffer = BytesIO(file_content)
         
-        raw = pd.read_excel(tmp_file_path, header=None)
+        raw = pd.read_excel(file_buffer, header=None, engine='openpyxl')
         mask = raw.apply(lambda r: r.astype(str).str.contains(r"Course Listing", case=False, na=False).any(), axis=1)
         hdr_idx = int(mask.idxmax()) if mask.any() else 2
-        df = pd.read_excel(tmp_file_path, header=hdr_idx)
+        
+        # Reset buffer's position to the beginning to be read again
+        file_buffer.seek(0)
+        df = pd.read_excel(file_buffer, header=hdr_idx, engine='openpyxl')
         
         events = []
         for _, row in df.iterrows():
