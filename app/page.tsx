@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
+import { event as trackEvent } from '@/lib/gtag';
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null)
@@ -65,6 +66,15 @@ export default function Home() {
       
       setSuccess(true)
       setTimeout(() => setSuccess(false), 5000)
+
+      // Track conversion event
+      trackEvent({
+        action: 'conversion',
+        category: 'file',
+        label: file.name,
+        value: 1
+      });
+
     } catch (err: any) {
       setError(err.message || 'An error occurred during conversion')
     } finally {
