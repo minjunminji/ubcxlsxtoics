@@ -1,112 +1,79 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import axios from 'axios'
-
-interface ConversionResult {
-  success: boolean
-  message: string
-  downloadUrl?: string
-}
+import { useDropzone } from 'react-dropzone'
 
 export default function Home() {
-  const [isDragOver, setIsDragOver] = useState(false)
+  const [file, setFile] = useState<File | null>(null)
   const [isConverting, setIsConverting] = useState(false)
-  const [result, setResult] = useState<ConversionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [skipBreaks, setSkipBreaks] = useState(false)
+  const [success, setSuccess] = useState(false)
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(true)
-  }, [])
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: useCallback((acceptedFiles: File[]) => {
+      const selectedFile = acceptedFiles[0]
+      setFile(selectedFile)
+      setError(null)
+    }, []),
+    accept: {
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-excel': ['.xls'],
+    },
+    multiple: false,
+  })
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsDragOver(false)
-  }, [])
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(false)
     
-    const files = Array.from(e.dataTransfer.files)
-    const excelFile = files.find(file => 
-      file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
-    )
-    
-    if (excelFile) {
-      handleFileUpload(excelFile)
-    } else {
-      setError('Please upload an Excel file (.xlsx or .xls)')
+    if (!file) {
+      setError('Please select a file to upload')
+      return
     }
-  }, [skipBreaks])
 
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      handleFileUpload(file)
-    }
-  }, [skipBreaks])
-
-  const handleFileUpload = async (file: File) => {
     setIsConverting(true)
     setError(null)
-    setResult(null)
-
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('skip_breaks', skipBreaks ? '1' : '0')
-
+    
     try {
-      const response = await axios.post('/api/convert', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        responseType: 'blob',
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const response = await fetch('/api/convert', {
+        method: 'POST',
+        body: formData,
       })
-
-      // Create download link
-      const blob = new Blob([response.data], { type: 'text/calendar' })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to convert file')
+      }
+      
+      // Get the blob data
+      const blob = await response.blob()
+      
+      // Create a download link
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
+      a.style.display = 'none'
       a.href = url
       a.download = 'courses.ics'
       document.body.appendChild(a)
       a.click()
+      
+      // Clean up
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-
-      setResult({
-        success: true,
-        message: 'Conversion successful! Your ICS file has been downloaded.',
-        downloadUrl: url
-      })
-    } catch (err: any) {
-      let errorMessage = 'An error occurred during conversion.'
       
-      if (err.response?.data) {
-        const reader = new FileReader()
-        reader.onload = () => {
-          try {
-            const errorData = JSON.parse(reader.result as string)
-            errorMessage = errorData.error || errorMessage
-          } catch {
-            errorMessage = 'Invalid file format or structure.'
-          }
-          setError(errorMessage)
-        }
-        reader.readAsText(err.response.data)
-      } else {
-        setError(errorMessage)
-      }
+      setSuccess(true)
+      setTimeout(() => setSuccess(false), 5000)
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during conversion')
     } finally {
       setIsConverting(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-ubc-blue to-blue-900 text-white">
+    <div className="min-h-screen bg-gradient-to-br from-blue-800 to-blue-900 text-white">
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
@@ -116,56 +83,54 @@ export default function Home() {
             </h1>
           </div>
 
-          {/* Beta Toggle */}
-          <div className="flex items-center justify-center mb-4">
-            <label className="flex items-center cursor-pointer gap-2">
-              <input
-                type="checkbox"
-                checked={skipBreaks}
-                onChange={e => setSkipBreaks(e.target.checked)}
-                className="form-checkbox h-5 w-5 text-ubc-gold"
-                disabled={isConverting}
-              />
-              <span className="font-medium">Skip UBC Holidays/Reading Breaks</span>
-              <span className="ml-2 px-2 py-0.5 text-xs rounded bg-yellow-400 text-yellow-900 font-bold uppercase">Beta</span>
-            </label>
-          </div>
-
           {/* Upload Area */}
           <div className="mb-8">
-            <div
-              className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                isDragOver 
-                  ? 'border-ubc-gold bg-ubc-gold/10' 
-                  : 'border-gray-400 hover:border-ubc-gold'
-              }`}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleFileSelect}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                disabled={isConverting}
-              />
-              
-              <div className="space-y-4">
-                <div className="text-6xl mb-4">📅</div>
-                <h3 className="text-2xl font-semibold">
-                  {isConverting ? 'Converting...' : 'Upload Your UBC Course Schedule'}
-                </h3>
-                <p className="text-gray-300">
-                  Drag and drop your Excel file here, or click to browse
-                </p>
-                <p className="text-sm text-gray-400">
-                  Only .xlsx and .xls files are supported
-                </p>
+            <form onSubmit={handleSubmit}>
+              <div 
+                {...getRootProps()} 
+                className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                  isDragActive 
+                    ? 'border-yellow-400 bg-yellow-400/10' 
+                    : 'border-gray-400 hover:border-yellow-400'
+                }`}
+              >
+                <input {...getInputProps()} />
+                
+                <div className="space-y-4">
+                  <div className="text-6xl mb-4">📅</div>
+                  <h3 className="text-2xl font-semibold">
+                    {isConverting ? 'Converting...' : 'Upload Your UBC Course Schedule'}
+                  </h3>
+                  <p className="text-gray-300">
+                    Drag and drop your Excel file here, or click to browse
+                  </p>
+                  <p className="text-sm text-gray-400">
+                    Only .xlsx and .xls files are supported
+                  </p>
+                </div>
               </div>
-            </div>
+              
+              {file && (
+                <div className="mt-4 p-3 bg-white/10 rounded flex items-center justify-between">
+                  <span className="truncate max-w-xs">{file.name}</span>
+                  <span className="text-sm text-gray-300">
+                    {(file.size / 1024).toFixed(1)} KB
+                  </span>
+                </div>
+              )}
+              
+              {file && (
+                <button 
+                  type="submit" 
+                  disabled={isConverting}
+                  className="mt-4 w-full py-2 px-4 rounded font-medium bg-yellow-400 hover:bg-yellow-500 text-blue-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isConverting ? 'Converting...' : 'Convert to Calendar'}
+                </button>
+              )}
+            </form>
           </div>
-
+          
           {/* Error Message */}
           {error && (
             <div className="mb-6 p-4 bg-red-500/20 border border-red-500 rounded-lg">
@@ -173,19 +138,19 @@ export default function Home() {
               <p className="text-red-200">{error}</p>
             </div>
           )}
-
+          
           {/* Success Message */}
-          {result?.success && (
+          {success && (
             <div className="mb-6 p-4 bg-green-500/20 border border-green-500 rounded-lg">
               <h4 className="font-semibold text-green-300 mb-2">Success!</h4>
-              <p className="text-green-200">{result.message}</p>
+              <p className="text-green-200">Conversion successful! Your calendar file has been downloaded.</p>
             </div>
           )}
 
           {/* Instructions */}
           <div className="bg-white/10 backdrop-blur-sm rounded-lg p-6">
             <h2 className="text-2xl font-bold mb-4">How to Use</h2>
-            
+          
             <div className="space-y-6">
               <div>
                 <h3 className="text-lg font-semibold mb-2">1. Export Your Course Schedule</h3>
@@ -206,7 +171,7 @@ export default function Home() {
                 
                 <div className="space-y-4">
                   <div>
-                    <h4 className="font-medium text-ubc-gold">Google Calendar:</h4>
+                    <h4 className="font-medium text-yellow-400">Google Calendar:</h4>
                     <ol className="list-decimal list-inside text-gray-200 space-y-1 ml-4">
                       <li>Open Google Calendar</li>
                       <li>Go to Settings</li>
@@ -216,14 +181,12 @@ export default function Home() {
                       <li>Click "Import"</li>
                     </ol>
                   </div>
-
+                  
                   
                 </div>
               </div>
             </div>
           </div>
-
-          
         </div>
       </div>
     </div>

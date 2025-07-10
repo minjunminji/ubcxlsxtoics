@@ -1,0 +1,92 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { writeFile, mkdir } from 'fs/promises'
+import { join } from 'path'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+import { existsSync } from 'fs'
+
+const execAsync = promisify(exec)
+
+export async function POST(request: NextRequest) {
+  try {
+    const formData = await request.formData()
+    const file = formData.get('file') as File
+    
+    if (!file) {
+      return NextResponse.json(
+        { error: 'No file uploaded' },
+        { status: 400 }
+      )
+    }
+
+    // Check file type
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      return NextResponse.json(
+        { error: 'Please upload an Excel file (.xlsx or .xls)' },
+        { status: 400 }
+      )
+    }
+
+    // Save uploaded file
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
+    const uploadDir = join(process.cwd(), 'uploads')
+    
+    // Ensure upload directory exists
+    if (!existsSync(uploadDir)) {
+      await mkdir(uploadDir, { recursive: true })
+    }
+    
+    const filePath = join(uploadDir, file.name)
+    await writeFile(filePath, buffer)
+
+    // Convert to ICS using Python script
+    const pythonScript = join(process.cwd(), 'excel_to_ics_web.py')
+    const { stdout, stderr } = await execAsync(`python "${pythonScript}" "${filePath}"`)
+    
+    if (stderr) {
+      console.error('Python script error:', stderr)
+    }
+
+    // Check if stdout contains error JSON
+    if (stdout.trim().startsWith('{')) {
+      try {
+        const errorData = JSON.parse(stdout)
+        return NextResponse.json(
+          { error: errorData.error || 'Conversion failed' },
+          { status: 400 }
+        )
+      } catch {
+        // Not JSON, continue with ICS content
+      }
+    }
+
+    // Return ICS content
+    return new NextResponse(stdout, {
+      headers: {
+        'Content-Type': 'text/calendar',
+        'Content-Disposition': 'attachment; filename="courses.ics"',
+      },
+    })
+
+  } catch (error: any) {
+    console.error('Conversion error:', error)
+    
+    let errorMessage = 'An error occurred during conversion.'
+    
+    if (error.message.includes('No module named')) {
+      errorMessage = 'Server configuration error. Please try again later.'
+    } else if (error.message.includes('FileNotFoundError')) {
+      errorMessage = 'Invalid file format. Please ensure you uploaded a valid UBC course schedule Excel file.'
+    } else if (error.message.includes('PermissionError')) {
+      errorMessage = 'File access error. Please try again.'
+    } else if (error.message.includes('ENOENT')) {
+      errorMessage = 'File system error. Please try again.'
+    }
+    
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: 500 }
+    )
+  }
+} 
