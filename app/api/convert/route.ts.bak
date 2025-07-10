@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     await writeFile(filePath, buffer)
 
     // Convert to ICS using Python script
-    const pythonScript = join(process.cwd(), 'excel_to_ics_web.py')
+    const pythonScript = join(process.cwd(), 'app', 'api', 'convert', 'index.py')
     const { stdout, stderr } = await execAsync(`python "${pythonScript}" "${filePath}"`)
     
     if (stderr) {
