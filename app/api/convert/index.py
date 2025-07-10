@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler
 import json
 from urllib.parse import parse_qs
 import cgi
+import traceback
 # remove tempfile import as it's no longer needed
 # import tempfile
 
@@ -173,36 +174,49 @@ END:VEVENT""")
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
+            # 1. Parse the multipart form data
             content_type, pdict = cgi.parse_header(self.headers.get('content-type'))
+            if content_type != 'multipart/form-data':
+                self.send_error_response(400, 'Invalid content type: must be multipart/form-data')
+                return
+
             pdict['boundary'] = bytes(pdict['boundary'], "utf-8")
             
-            if content_type == 'multipart/form-data':
-                fields = cgi.parse_multipart(self.rfile, pdict)
-                file_content = fields.get('file')[0]
-                
-                ics_data, error = convert_excel_to_ics(file_content)
+            fields = cgi.parse_multipart(self.rfile, pdict)
+            file_field = fields.get('file')
+            
+            if not file_field or not file_field[0]:
+                self.send_error_response(400, 'File data not found in request')
+                return
+            
+            file_content = file_field[0]
+            
+            # 2. Convert the file
+            ics_data, error = convert_excel_to_ics(file_content)
 
-                if error:
-                    self.send_response(400)
-                    self.send_header('Content-type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
-                else:
-                    self.send_response(200)
-                    self.send_header('Content-type', 'text/calendar')
-                    self.send_header('Content-Disposition', 'attachment; filename="courses.ics"')
-                    self.end_headers()
-                    self.wfile.write(ics_data.encode('utf-8'))
-            else:
-                self.send_response(400)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'error': 'Invalid content type'}).encode('utf-8'))
-        
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
+            if error:
+                # This error comes from a caught exception inside the conversion function
+                self.send_error_response(400, f"Conversion Error: {error}")
+                return
+
+            # 3. Send the successful response
+            self.send_response(200)
+            self.send_header('Content-type', 'text/calendar')
+            self.send_header('Content-Disposition', 'attachment; filename="courses.ics"')
             self.end_headers()
-            self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            self.wfile.write(ics_data.encode('utf-8'))
 
-        return
+        except Exception as e:
+            # This is the crucial part: catch ANY other exception
+            tb_str = traceback.format_exc()
+            print(f"--- UNHANDLED EXCEPTION --- \n{tb_str}", file=sys.stderr)
+            self.send_error_response(500, "An internal server error occurred.", traceback=tb_str)
+
+    def send_error_response(self, code, message, traceback=None):
+        self.send_response(code)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        error_payload = {'error': message}
+        if traceback:
+            error_payload['traceback'] = traceback
+        self.wfile.write(json.dumps(error_payload).encode('utf-8'))
