@@ -9,8 +9,14 @@ import sys, uuid, re, json
 from datetime import datetime, timedelta
 from io import BytesIO
 
-import pandas as pd
-from dateutil import parser as date_parser
+# We will import heavy libraries lazily inside functions to avoid import-time failures
+try:
+    import pandas as pd  # type: ignore
+    from dateutil import parser as date_parser  # type: ignore
+except Exception:
+    # We will handle missing dependencies later during function call
+    pd = None  # type: ignore
+    date_parser = None  # type: ignore
 
 from http.server import BaseHTTPRequestHandler
 import json
@@ -104,6 +110,16 @@ def parse_meeting_pattern(pattern: str):
 
 def convert_excel_to_ics(file_content: bytes):
     try:
+        # Ensure pandas and dateutil are available
+        global pd, date_parser
+        if pd is None or date_parser is None:
+            try:
+                import importlib
+                pd = importlib.import_module("pandas")  # type: ignore
+                date_parser = importlib.import_module("dateutil.parser")  # type: ignore
+            except ModuleNotFoundError as ie:
+                return None, f"Missing Python dependency: {ie.name}. Please ensure it is in requirements.txt"
+
         # Process file in-memory instead of writing to disk
         file_buffer = BytesIO(file_content)
         
@@ -167,7 +183,9 @@ END:VEVENT""")
         cal = "\n".join(["BEGIN:VCALENDAR", "VERSION:2.0", "CALSCALE:GREGORIAN", VTIMEZONE_BLOCK, *events, "END:VCALENDAR"])
         return cal, None
     except Exception as e:
-        return None, str(e)
+        import traceback, textwrap
+        tb = traceback.format_exc()
+        return None, textwrap.shorten(tb, width=1000)
 
 
 # This is the Vercel Serverless Function handler
